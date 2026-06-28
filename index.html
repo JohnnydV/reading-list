@@ -669,7 +669,9 @@ const WORD_MODEL={a:1.056781, c:5.448192, mape:26.5, medape:17.6, r2:0.746, n:20
 let BOOKS=[];                 // array of book objects
 let HL=[];                    // highlights: {id,key,title,author,type,text,page,location,added,source}
 let HL_UPDATED=null;          // ISO timestamp highlights were last changed (any source)
-let DATA_UPDATED=null;        // ISO timestamp the loaded library was last saved (for the "Updated …" pill)
+let DATA_UPDATED=null;        // ISO timestamp shown in the "Updated …" pill (= last DATA edit, not import/open)
+let LIB_UPDATED=null;         // canonical "data last modified" — only bumped on real edits, round-trips in the file
+function touchData(){LIB_UPDATED=DATA_UPDATED=new Date().toISOString();}  // call whenever book/highlight data changes
 let LIB_NAME=null;            // active library's display name (shown as the app title)
 let fileHandle=null;          // FileSystemFileHandle when connected
 let sortKey="id", sortDir=-1; // default newest first
@@ -697,7 +699,9 @@ function loadData(text){const o=JSON.parse(text);
   HL=(o&&!Array.isArray(o)&&Array.isArray(o.highlights))?o.highlights:[];
   HL_UPDATED=(o&&!Array.isArray(o)&&o.highlightsUpdated)||null;
   LIB_NAME=(o&&!Array.isArray(o)&&o.name)||null;
-  DATA_UPDATED=(o&&!Array.isArray(o)&&(o.exportedAt||o.highlightsUpdated))||null;  // when this library was last saved
+  // "last updated" = when the DATA last changed (prefer updatedAt; fall back for older files)
+  LIB_UPDATED=(o&&!Array.isArray(o)&&(o.updatedAt||o.exportedAt||o.highlightsUpdated))||null;
+  DATA_UPDATED=LIB_UPDATED;
   return BOOKS;}
 function fmtUpdated(ts){
   if(!ts)return"";
@@ -738,7 +742,10 @@ async function loadFromFile(){
   const f=await fileHandle.getFile();const t=await f.text();
   loadData(t);setStatus("live");
 }
-function serialize(){return JSON.stringify({schemaVersion:1,name:LIB_NAME||undefined,exportedAt:new Date().toISOString(),books:BOOKS,highlights:HL,highlightsUpdated:HL_UPDATED},null,2);}
+function serialize(){return JSON.stringify({schemaVersion:1,name:LIB_NAME||undefined,
+  updatedAt:LIB_UPDATED||new Date().toISOString(),    // when data last changed (round-trips; not bumped by save/import alone)
+  exportedAt:new Date().toISOString(),                // when this file was written (save/export time)
+  books:BOOKS,highlights:HL,highlightsUpdated:HL_UPDATED},null,2);}
 
 async function persist(){
   const data=serialize();
@@ -1056,9 +1063,9 @@ function addManualHighlights(book,texts){
   texts.forEach(t=>HL.push({id:genId(),key:hlKey(book),title:book.title,
     author:[book.authorFirst,book.authorLast].filter(Boolean).join(" "),
     type:"highlight",text:t,page:null,location:null,added:today,source:"manual"}));
-  HL_UPDATED=new Date().toISOString();persist();
+  HL_UPDATED=new Date().toISOString();touchData();persist();
 }
-function deleteHighlight(id){HL=HL.filter(h=>h.id!==id);HL_UPDATED=new Date().toISOString();persist();}
+function deleteHighlight(id){HL=HL.filter(h=>h.id!==id);HL_UPDATED=new Date().toISOString();touchData();persist();}
 // content signature for de-dup — MUST match import_kindle_highlights.py sig()
 function hlSig(h){return `${normTitle(h.title)}|${h.type}|${h.location||""}|${(h.text||"").slice(0,80).trim().toLowerCase()}`;}
 function parseAuthor(raw){raw=(raw||"").trim();const p=raw.split(",");
@@ -1092,7 +1099,7 @@ function mergeKindleHighlights(parsed){
     if(titles[key])matched++;
     sigs.add(s); HL.push(h); added++;
   });
-  if(added){HL_UPDATED=new Date().toISOString();persist();}
+  if(added){HL_UPDATED=new Date().toISOString();touchData();persist();}
   return {added,matched,total:parsed.length};
 }
 // Keep a raw, timestamped copy of an imported clippings file in archive/highlights/ — a durable
@@ -1425,7 +1432,7 @@ function saveBook(){
   // "Perennial" is a property of the book (title+author), not one reading — sync across all copies
   const k=bookKey(rec); let synced=0;
   BOOKS.forEach(b=>{if(b!==editing && bookKey(b)===k && b.perennial!==rec.perennial){b.perennial=rec.perennial;synced++;}});
-  persist();render();closeModal();
+  touchData();persist();render();closeModal();
   toast(editing?(synced?`Updated · perennial synced to ${synced+1} copies`:"Updated"):"Added");
 }
 // Two-step inline confirm (window.confirm is a no-op in the Tauri webview)
@@ -1437,7 +1444,7 @@ function deleteBook(){
   if(!delArmed){delArmed=true;btn.textContent="Click again to delete";
     clearTimeout(delTimer);delTimer=setTimeout(resetDelete,4000);return;}
   resetDelete();
-  BOOKS=BOOKS.filter(b=>b!==editing);persist();render();closeModal();toast("Deleted");
+  BOOKS=BOOKS.filter(b=>b!==editing);touchData();persist();render();closeModal();toast("Deleted");
 }
 
 /* ============ TITLE / SUBTITLE SPLIT GUESS ============ */
@@ -2190,7 +2197,7 @@ async function renameLibrary(v){
   if(!v||v===cur)return false;
   const st=document.getElementById("statusText");
   try{
-    LIB_NAME=v;updateBrand();
+    LIB_NAME=v;updateBrand();touchData();
     const data=serialize();
     try{localStorage.setItem(LS_KEY,data);}catch(_){}     // isolate: a storage error must not block the file write
     if(isNative){
