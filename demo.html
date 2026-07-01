@@ -468,6 +468,7 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
       <div id="vocabMain"><div id="vocabGroups"></div></div>
     </div>
   </section>
+  <div id="buildStamp" style="text-align:center;color:var(--muted);font-size:11px;padding:14px 0 4px"></div>
 </main>
 
 <!-- Edit modal -->
@@ -804,7 +805,7 @@ function serialize(){return JSON.stringify({schemaVersion:1,name:LIB_NAME||undef
 
 async function persist(){
   const data=serialize();
-  localStorage.setItem(LS_KEY,data);                 // always mirror locally
+  try{localStorage.setItem(LS_KEY,data);}catch(e){}  // mirror locally; never let a storage error block the save/status
   if(isNative){
     try{await tauriInvoke("write_library",{contents:data});setStatus("native");}
     catch(e){setStatus("local");}
@@ -1098,6 +1099,9 @@ function daysOf(b){
 let TITLE_COUNTS={};
 function normTitle(s){return (s||"").trim().toLowerCase();}
 function timesRead(b){const t=normTitle(b.title);return t?(TITLE_COUNTS[t]||1):1;}
+// Reading year, computed live & consistently: finish year, else start year, else stored value.
+function yearOf(b){return b.dateFinished?+String(b.dateFinished).slice(0,4)
+  :(b.dateStarted?+String(b.dateStarted).slice(0,4):(b.year||""));}
 function bookKey(b){return `${normTitle(b.title)}|${normTitle(b.authorFirst)}|${normTitle(b.authorLast)}`;}
 /* ----- highlights (keyed by normalized title, shared across re-reads) ----- */
 function hlKey(b){return normTitle(b.title);}
@@ -1291,7 +1295,7 @@ const COLUMNS=[
   {k:"title",label:"Title",cls:"title",get:b=>b.title||"",
     render:b=>escapeHtml(b.title||"")},
   {k:"author",label:"Author",get:b=>`${b.authorFirst||""} ${b.authorLast||""}`.trim()},
-  {k:"year",label:"Year",cls:"num hide-m"},
+  {k:"year",label:"Year",cls:"num hide-m",get:b=>yearOf(b)},
   {k:"genre",label:"Genre",render:b=>{if(!b.genre)return"";const name=b.subgenre||b.genre,col=catColor(name);
     return `<span class="tag" style="background:${hexToRgba(col,0.2)};color:${col}">${escapeHtml(name)}</span>`;}},
   {k:"region",label:"Region",cls:"hide-m"},
@@ -1336,7 +1340,7 @@ function render(){
   document.getElementById("stats").style.display=(isList&&!shelfMode)?"block":"none";
   if(shelfMode){renderPerennialShelf();return;}
   // filters population
-  const yrs=[...new Set(BOOKS.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
+  const yrs=[...new Set(BOOKS.map(yearOf).filter(Boolean))].sort((a,b)=>b-a);
   fillSelect("fYear",yrs,"All years");
   fillSelect("fRegion",REGIONS.filter(r=>BOOKS.some(b=>b.region===r)),"All regions");
   // header
@@ -1387,7 +1391,7 @@ function applyFilters(arr){
     if(currentView==="reading" && ((b.completed!==false && b.dateFinished) || b.abandoned))return false;
     if(shelf==="perennial" && !b.perennial)return false;
     if(q){const hay=`${b.title||""} ${b.subtitle||""} ${b.authorFirst||""} ${b.authorLast||""}`.toLowerCase();if(!hay.includes(q))return false;}
-    if(y&&String(b.year)!==y)return false;
+    if(y&&String(yearOf(b))!==y)return false;
     if(g&&b.genre!==g)return false;
     if(r&&b.region!==r)return false;
     return true;});
@@ -2700,6 +2704,14 @@ if(!supportsFS)document.getElementById("connectBtn").style.display="none";
 initTheme();initLists();
 const _poId=popoutBookId();
 init().then(()=>{ if(_poId)enterPopout(_poId); else { render(); maybeAutoBackup(); } });
+// Build stamp (so you can confirm the device is running the latest version)
+const BUILD="2026-06-30 19:52";
+(function(){const el=document.getElementById("buildStamp"); if(el)el.textContent="Reading List · build "+(BUILD||"dev");})();
+// Hosted web version only: a network-first service worker keeps the installed iPad/iPhone app
+// up to date (iOS otherwise serves a stale cached shell). Not used in the native Mac app.
+if(!isNative && location.protocol==="https:" && "serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+}
 </script>
 </body>
 </html>
