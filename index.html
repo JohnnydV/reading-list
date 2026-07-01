@@ -366,12 +366,11 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
     <button class="tab" data-view="model">Model</button>
     <button class="tab" data-view="highlights">Highlights</button>
     <button class="tab" data-view="vocab">Vocabulary</button>
+    <button class="tab" data-view="perennial">Perennial Shelf</button>
     <div class="actions">
       <button class="btn" id="settingsBtn" title="Settings">⚙ Settings</button>
       <button class="btn" id="connectBtn" title="Connect to your library.json file for auto-save">🔗 Connect file</button>
       <button class="btn" id="reloadBtn" title="Load the latest library.json">↻ Load latest</button>
-      <button class="btn" id="importBtn">⬆ Import</button>
-      <button class="btn" id="exportBtn">⬇ Export</button>
       <button class="btn primary" id="addBtn">＋ Add book</button>
     </div>
   </div>
@@ -385,7 +384,6 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
     <select id="fYear"><option value="">All years</option></select>
     <select id="fGenre"><option value="">All genres</option><option>Fiction</option><option>Nonfiction</option></select>
     <select id="fRegion"><option value="">All regions</option></select>
-    <select id="fShelf"><option value="">All books</option><option value="perennial">Perennial Shelf</option></select>
     <span class="count" id="count"></span>
   </div>
 
@@ -603,6 +601,13 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
           <button class="btn" id="libLoadBtn">Load</button>
         </div>
         <p class="hint" id="libMsg" style="margin:10px 0 0"></p>
+
+        <label class="setlabel" style="margin-top:16px">Import / Export</label>
+        <p class="hint" style="margin:2px 0 6px">Load a <code>library.json</code> file, or save the current library out to one.</p>
+        <div class="hexrow">
+          <button class="btn" id="importBtn">⬆ Import</button>
+          <button class="btn" id="exportBtn">⬇ Export</button>
+        </div>
       </div>
 
       <div class="set-pane" data-spane="colors" hidden>
@@ -1317,28 +1322,24 @@ function render(){
   updateBrand();
   document.getElementById("yearsub").textContent =
     BOOKS.length?`${BOOKS.length} books`:"";
+  // count occurrences of each title (needed by several views for "Times read")
+  TITLE_COUNTS={};
+  BOOKS.forEach(b=>{const t=normTitle(b.title);if(t)TITLE_COUNTS[t]=(TITLE_COUNTS[t]||0)+1;});
   // view toggle
   const v=currentView, isList=(v==="library"||v==="reading");
   document.getElementById("dashboard").style.display=v==="dashboard"?"block":"none";
   document.getElementById("model").style.display=v==="model"?"block":"none";
   document.getElementById("highlights").style.display=v==="highlights"?"block":"none";
   document.getElementById("vocab").style.display=v==="vocab"?"block":"none";
+  document.getElementById("perennialShelf").style.display=v==="perennial"?"block":"none";
   document.querySelector("main > .toolbar").style.display=isList?"flex":"none";
   document.getElementById("tablewrap").style.display=isList?"block":"none";
-  document.getElementById("stats").style.display=isList?"block":"none";
+  document.getElementById("stats").style.display=(v==="library")?"block":"none";   // ribbons only on Library
   if(v==="dashboard"){renderDashboard();return;}
   if(v==="model"){renderModel();return;}
   if(v==="highlights"){renderHighlightsView();return;}
   if(v==="vocab"){renderVocab();return;}
-  // count occurrences of each title across the whole library (for "Times read")
-  TITLE_COUNTS={};
-  BOOKS.forEach(b=>{const t=normTitle(b.title);if(t)TITLE_COUNTS[t]=(TITLE_COUNTS[t]||0)+1;});
-  // Perennial Shelf = a distinct view (unique titles, times read, last read) instead of the normal table
-  const shelfMode=(v==="library" && document.getElementById("fShelf").value==="perennial");
-  document.getElementById("perennialShelf").style.display=shelfMode?"block":"none";
-  document.getElementById("tablewrap").style.display=(isList&&!shelfMode)?"block":"none";
-  document.getElementById("stats").style.display=(isList&&!shelfMode)?"block":"none";
-  if(shelfMode){renderPerennialShelf();return;}
+  if(v==="perennial"){renderPerennialShelf();return;}
   // filters population
   const yrs=[...new Set(BOOKS.map(yearOf).filter(Boolean))].sort((a,b)=>b-a);
   fillSelect("fYear",yrs,"All years");
@@ -1357,7 +1358,7 @@ function render(){
     return (x>y?1:x<y?-1:0)*sortDir;});
 
   // summary: Current year + All years rows (always full library, not filtered)
-  document.getElementById("stats").innerHTML=ribbonsHtml();
+  if(v==="library")document.getElementById("stats").innerHTML=ribbonsHtml();  // ribbons on Library only
 
   const tb=document.getElementById("rows");tb.innerHTML="";
   list.forEach(b=>{const tr=document.createElement("tr");tr.onclick=()=>openModal(b);
@@ -1386,10 +1387,8 @@ function fillSelect(id,vals,all){const s=document.getElementById(id);const cur=s
 function applyFilters(arr){
   const q=document.getElementById("search").value.trim().toLowerCase();
   const y=document.getElementById("fYear").value,g=document.getElementById("fGenre").value,r=document.getElementById("fRegion").value;
-  const shelf=document.getElementById("fShelf").value;
   return arr.filter(b=>{
     if(currentView==="reading" && ((b.completed!==false && b.dateFinished) || b.abandoned))return false;
-    if(shelf==="perennial" && !b.perennial)return false;
     if(q){const hay=`${b.title||""} ${b.subtitle||""} ${b.authorFirst||""} ${b.authorLast||""}`.toLowerCase();if(!hay.includes(q))return false;}
     if(y&&String(yearOf(b))!==y)return false;
     if(g&&b.genre!==g)return false;
@@ -1880,7 +1879,7 @@ function renderDashboard(){
     document.getElementById("dashNote").textContent="Charts need an internet connection (Chart.js) — the summary above and the table below work offline.";
     renderYearTable(ctx0.all);return;
   }
-  Chart.defaults.color=cssVar("--muted");
+  Chart.defaults.color=cssVar("--muted"); Chart.defaults.animation=false;  // snappier on mobile
   Chart.defaults.font.family="-apple-system,Segoe UI,Roboto,sans-serif";
   host.innerHTML=layout.map(it=>`<div class="card ${it.width==="full"?"wide":""}">
     <h3>${CARD_DEFS[it.key].title}</h3><div class="cwrap"><canvas id="dc_${it.key}"></canvas></div></div>`).join("");
@@ -2190,7 +2189,7 @@ function renderModel(){
 
   if(typeof Chart==="undefined"){document.getElementById("modelNote").textContent="Charts need an internet connection (Chart.js).";return;}
   destroyModelCharts();
-  Chart.defaults.color=cssVar("--muted");
+  Chart.defaults.color=cssVar("--muted"); Chart.defaults.animation=false;  // snappier on mobile
   Chart.defaults.font.family="-apple-system,Segoe UI,Roboto,sans-serif";
   const grid=cssVar("--line"), mut=cssVar("--muted");
   const pal=themeColors().palette;
@@ -2524,7 +2523,7 @@ document.getElementById("importBtn").onclick=doImport;
 document.getElementById("reloadBtn").onclick=loadLatest;
 document.getElementById("exportBtn").onclick=doExport;
 document.getElementById("overlay").onclick=e=>{if(e.target.id==="overlay")closeModal();};
-["search","fYear","fGenre","fRegion","fShelf"].forEach(id=>document.getElementById(id).addEventListener("input",render));
+["search","fYear","fGenre","fRegion"].forEach(id=>document.getElementById(id).addEventListener("input",render));
 // bar-books popup window
 document.getElementById("barBooksClose").onclick=()=>document.getElementById("barBooksWin").style.display="none";
 makeDraggable(document.getElementById("barBooksWin"),document.getElementById("barBooksHead"));
@@ -2534,7 +2533,7 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   currentView=t.dataset.view;render();});
 // ---- drag-to-reorder tabs (saved globally in localStorage; applies to every library, persists across sessions) ----
 const TABS_ORDER_KEY="readingListTabOrder";
-const DEFAULT_TAB_ORDER=["library","reading","dashboard","model","highlights","vocab"];
+const DEFAULT_TAB_ORDER=["library","reading","dashboard","model","highlights","vocab","perennial"];
 function getTabOrder(){
   try{const s=JSON.parse(localStorage.getItem(TABS_ORDER_KEY));
     if(Array.isArray(s)){const known=new Set(DEFAULT_TAB_ORDER);
@@ -2601,18 +2600,21 @@ function switchTabByOffset(dir){
 (function initSwipeTabs(){
   const inHScroll=el=>{ for(let n=el;n&&n!==document.body;n=n.parentElement){
     if(n.scrollWidth-n.clientWidth>4){const ov=getComputedStyle(n).overflowX; if(ov==="auto"||ov==="scroll")return true;} } return false; };
-  let sx=0,sy=0,st=0,skip=false;
+  let sx=0,sy=0,st=0,starget=null;
+  // touchstart stays trivial (just record) — no style reads, so it can't add latency to taps/scrolls
   document.addEventListener("touchstart",e=>{
-    if(e.touches.length!==1){skip=true;return;}
-    const t=e.target;
-    skip=!!(t.closest&&t.closest("input,textarea,select,button,a,.tabs,.floatwin,.modal,canvas"))||inHScroll(t);
-    const p=e.touches[0]; sx=p.clientX; sy=p.clientY; st=Date.now();
+    if(e.touches.length!==1){starget=null;return;}
+    const p=e.touches[0]; sx=p.clientX; sy=p.clientY; st=Date.now(); starget=e.target;
   },{passive:true});
   document.addEventListener("touchend",e=>{
-    if(skip)return; const p=e.changedTouches[0]; if(!p)return;
+    const t=starget; starget=null; if(!t)return;
+    const p=e.changedTouches[0]; if(!p)return;
     const dx=p.clientX-sx, dy=p.clientY-sy;
-    if(Date.now()-st<800 && Math.abs(dx)>=60 && Math.abs(dx)>Math.abs(dy)*1.8)
-      switchTabByOffset(dx<0?1:-1);   // swipe left → next tab, swipe right → previous
+    if(Date.now()-st>=800 || Math.abs(dx)<60 || Math.abs(dx)<=Math.abs(dy)*1.8)return;  // not a horizontal swipe
+    // only now (rarely) do the costlier ignore checks
+    if(t.closest&&t.closest("input,textarea,select,button,a,.tabs,.floatwin,.modal,canvas"))return;
+    if(inHScroll(t))return;
+    switchTabByOffset(dx<0?1:-1);   // swipe left → next tab, swipe right → previous
   },{passive:true});
 })();
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeSettings();document.getElementById("exportOverlay").classList.remove("open");}});
@@ -2705,7 +2707,7 @@ initTheme();initLists();
 const _poId=popoutBookId();
 init().then(()=>{ if(_poId)enterPopout(_poId); else { render(); maybeAutoBackup(); } });
 // Build stamp (so you can confirm the device is running the latest version)
-const BUILD="2026-06-30 19:52";
+const BUILD="2026-06-30 20:38";
 (function(){const el=document.getElementById("buildStamp"); if(el)el.textContent="Reading List · build "+(BUILD||"dev");})();
 // Hosted web version only: a network-first service worker keeps the installed iPad/iPhone app
 // up to date (iOS otherwise serves a stale cached shell). Not used in the native Mac app.
