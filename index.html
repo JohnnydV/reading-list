@@ -291,8 +291,29 @@ tr.perennial-row td.title{box-shadow:inset 3px 0 0 var(--yellow)}
 .hl-src{font-size:10px;padding:1px 6px;border-radius:10px;text-transform:uppercase;letter-spacing:.03em}
 .hl-src.kindle{background:color-mix(in srgb,var(--sapphire) 22%,var(--base));color:var(--sapphire)}
 .hl-src.manual{background:color-mix(in srgb,var(--peach) 22%,var(--base));color:var(--peach)}
-.hl-del{margin-left:auto;border:none;background:none;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;padding:0 2px}
+.hl-del{margin-left:6px;border:none;background:none;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;padding:0 2px}
 .hl-del:hover{color:var(--red)}
+.hl-fav{margin-left:auto;border:none;background:none;color:var(--muted);font-size:15px;line-height:1;cursor:pointer;padding:0 2px}
+.hl-fav.on{color:var(--yellow)}
+.shelf-summary{color:var(--muted);font-size:13px;margin:2px 0 12px}
+/* Highlights view: left title nav + right list */
+.hl-layout{display:flex;gap:16px;align-items:flex-start}
+.hl-nav{flex:none;width:250px;max-height:72vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px}
+.hl-nav .navitem{display:flex;justify-content:space-between;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--ink)}
+.hl-nav .navitem:hover{background:var(--surface0)}
+.hl-nav .navitem.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.hl-nav .navitem .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hl-nav .navitem .c{color:var(--muted);font-size:12px;flex:none}
+#hlMain,#vocabMain{flex:1;min-width:0}
+@media(max-width:760px){.hl-layout{flex-direction:column}.hl-nav{width:100%;max-height:220px}}
+/* Vocabulary list */
+.vocab-list{display:flex;flex-direction:column;gap:2px}
+.vocab-item{display:grid;grid-template-columns:170px 1fr;gap:12px;padding:8px 2px;border-bottom:1px solid var(--line);align-items:baseline}
+.vocab-item:last-child{border-bottom:none}
+.vword{font-weight:600;color:var(--ink)}
+.vdef{font-size:13px;color:var(--subtext1,var(--ink))}
+.vdef .vpos{color:var(--muted);font-size:12px}
+@media(max-width:520px){.vocab-item{grid-template-columns:1fr}}
 .split-suggest{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;padding:9px 12px;
   background:color-mix(in srgb,var(--mauve) 16%,var(--base));border:1px solid color-mix(in srgb,var(--mauve) 40%,var(--base));
   border-radius:9px;font-size:13px}
@@ -344,6 +365,7 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
     <button class="tab" data-view="dashboard">Dashboard</button>
     <button class="tab" data-view="model">Model</button>
     <button class="tab" data-view="highlights">Highlights</button>
+    <button class="tab" data-view="vocab">Vocabulary</button>
     <div class="actions">
       <button class="btn" id="settingsBtn" title="Settings">⚙ Settings</button>
       <button class="btn" id="connectBtn" title="Connect to your library.json file for auto-save">🔗 Connect file</button>
@@ -374,6 +396,8 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
     </table>
     <div class="empty" id="empty" style="display:none">No books match.</div>
   </div>
+
+  <div id="perennialShelf" style="display:none"></div>
 
   <section id="dashboard" style="display:none">
     <div id="dashRibbons" class="statwrap"></div>
@@ -419,11 +443,30 @@ label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase
   <section id="highlights" style="display:none">
     <div class="toolbar">
       <input type="search" id="hlSearch" placeholder="Search highlights or titles…">
+      <label class="chk" style="white-space:nowrap"><input type="checkbox" id="hlFavOnly"> ★ Favorites only</label>
+      <button class="btn" id="hlDedupeBtn" title="Merge overlapping highlights of the same passage (keeps the longest)">⚑ Clean up duplicates</button>
       <button class="btn" id="kindleBtn" style="display:none" title="Pick your Kindle's My Clippings.txt">⬆ Import from Kindle</button>
       <span class="count" id="hlViewCount"></span>
     </div>
     <p class="dashnote" id="hlUpdated" style="margin:-4px 0 12px"></p>
-    <div id="hlGroups"></div>
+    <p id="hlDedupeStatus" style="margin:-4px 0 12px;color:var(--accent);font-size:13px;display:none"></p>
+    <div class="hl-layout">
+      <div id="hlNav" class="hl-nav"></div>
+      <div id="hlMain"><div id="hlGroups"></div></div>
+    </div>
+  </section>
+
+  <section id="vocab" style="display:none">
+    <div class="toolbar">
+      <input type="search" id="vocabSearch" placeholder="Search words or titles…">
+      <button class="btn" id="vocabLookupBtn" title="Fetch definitions for words that don't have one yet">📖 Look up definitions</button>
+      <span class="count" id="vocabCount"></span>
+    </div>
+    <p class="dashnote" style="margin:-4px 0 12px">Single-word highlights, treated as vocabulary. Definitions from the free Dictionary API (cached once fetched).</p>
+    <div class="hl-layout">
+      <div id="vocabNav" class="hl-nav"></div>
+      <div id="vocabMain"><div id="vocabGroups"></div></div>
+    </div>
   </section>
 </main>
 
@@ -667,7 +710,12 @@ const WORD_MODEL={a:1.056781, c:5.448192, mape:26.5, medape:17.6, r2:0.746, n:20
 
 /* ============ STATE ============ */
 let BOOKS=[];                 // array of book objects
-let HL=[];                    // highlights: {id,key,title,author,type,text,page,location,added,source}
+let HL=[];                    // highlights: {id,key,title,author,type,text,page,location,added,source,fav}
+let HL_SELECTED=null;         // Highlights view: selected title key (null = all titles)
+let FAV=[];                   // durable favorite archive: [{sig,title,author,text,type,location,page,added,source,favedAt}] — survives Kindle re-imports & overwrites
+let SUPPRESSED=[];            // hlSig() signatures of highlights the user removed as duplicates — skipped on future Kindle imports
+let VOCAB_SELECTED=null;      // Vocabulary view: selected title key (null = all)
+let DEFS={};                  // cached word definitions {wordLower:{ok,def,pos}} — persisted so they're offline after first fetch
 let HL_UPDATED=null;          // ISO timestamp highlights were last changed (any source)
 let DATA_UPDATED=null;        // ISO timestamp shown in the "Updated …" pill (= last DATA edit, not import/open)
 let LIB_UPDATED=null;         // canonical "data last modified" — only bumped on real edits, round-trips in the file
@@ -702,6 +750,13 @@ function loadData(text){const o=JSON.parse(text);
   // "last updated" = when the DATA last changed (prefer updatedAt; fall back for older files)
   LIB_UPDATED=(o&&!Array.isArray(o)&&(o.updatedAt||o.exportedAt||o.highlightsUpdated))||null;
   DATA_UPDATED=LIB_UPDATED;
+  FAV=(o&&!Array.isArray(o)&&Array.isArray(o.favorites))?o.favorites:[];
+  SUPPRESSED=(o&&!Array.isArray(o)&&Array.isArray(o.suppressed))?o.suppressed:[];
+  DEFS=(o&&!Array.isArray(o)&&o.definitions&&typeof o.definitions==="object")?o.definitions:{};
+  // re-apply the ★ flag to any current highlight whose content matches an archived favorite
+  // (so favorites survive Kindle re-imports that create fresh highlight objects with the same text)
+  const favSigs=new Set(FAV.map(f=>f.sig));
+  HL.forEach(h=>{ h.fav=favSigs.has(hlSig(h)); });
   return BOOKS;}
 function fmtUpdated(ts){
   if(!ts)return"";
@@ -745,7 +800,7 @@ async function loadFromFile(){
 function serialize(){return JSON.stringify({schemaVersion:1,name:LIB_NAME||undefined,
   updatedAt:LIB_UPDATED||new Date().toISOString(),    // when data last changed (round-trips; not bumped by save/import alone)
   exportedAt:new Date().toISOString(),                // when this file was written (save/export time)
-  books:BOOKS,highlights:HL,highlightsUpdated:HL_UPDATED},null,2);}
+  books:BOOKS,highlights:HL,highlightsUpdated:HL_UPDATED,favorites:FAV,suppressed:SUPPRESSED,definitions:DEFS},null,2);}
 
 async function persist(){
   const data=serialize();
@@ -1066,6 +1121,87 @@ function addManualHighlights(book,texts){
   HL_UPDATED=new Date().toISOString();touchData();persist();
 }
 function deleteHighlight(id){HL=HL.filter(h=>h.id!==id);HL_UPDATED=new Date().toISOString();touchData();persist();}
+// Star/unstar a highlight. Favorites are mirrored into the durable FAV archive (keyed by content
+// signature) so they survive Kindle re-imports and library overwrites.
+function toggleFav(id){
+  const h=HL.find(x=>x.id===id); if(!h)return;
+  h.fav=!h.fav;
+  const sig=hlSig(h);
+  if(h.fav){ if(!FAV.some(f=>f.sig===sig))FAV.push({sig,title:h.title,author:h.author||"",text:h.text,
+    type:h.type,location:h.location||null,page:h.page||null,added:h.added||null,source:h.source||null,favedAt:new Date().toISOString()}); }
+  else { FAV=FAV.filter(f=>f.sig!==sig); }
+  touchData();persist();archiveFavorites();
+}
+// Best-effort separate copy of the favorites archive (never touched by Kindle imports).
+async function archiveFavorites(){
+  const data=JSON.stringify({favorites:FAV,updatedAt:new Date().toISOString()},null,2);
+  try{
+    if(isNative){await tauriInvoke("archive_highlights",{name:"favorites.json",contents:data});return;}
+    if(supportsDir){const dir=await projectDirQuiet(); if(dir){
+      const a=await dir.getDirectoryHandle("archive",{create:true});
+      const hd=await a.getDirectoryHandle("highlights",{create:true});
+      const fh=await hd.getFileHandle("favorites.json",{create:true});const w=await fh.createWritable();await w.write(data);await w.close();}}
+  }catch(e){}
+}
+/* ---- overlapping-highlight cleanup (Kindle re-highlights the same passage with slightly different bounds) ---- */
+function normHlText(s){return (s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();}
+function parseLocRange(loc){const m=/(\d+)\s*-\s*(\d+)/.exec(loc||"")||/(\d+)/.exec(loc||"");
+  return m?(m[2]?[+m[1],+m[2]]:[+m[1],+m[1]]):null;}
+function hlSamePassage(a,b){
+  const la=parseLocRange(a.location), lb=parseLocRange(b.location);
+  if(la&&lb && la[0]<=lb[1]+3 && lb[0]<=la[1]+3)return true;     // overlapping/adjacent Kindle locations
+  const A=normHlText(a.text), B=normHlText(b.text); if(!A||!B)return false;
+  const short=A.length<=B.length?A:B, long=A.length<=B.length?B:A;
+  if(long.includes(short))return true;                            // one fully contains the other
+  const aw=A.split(" "), bw=B.split(" ");                          // longest shared contiguous word-run
+  let best=0; for(let i=0;i<aw.length;i++)for(let j=0;j<bw.length;j++){let k=0;
+    while(i+k<aw.length&&j+k<bw.length&&aw[i+k]===bw[j+k])k++; if(k>best)best=k;}
+  return best>=Math.max(6, Math.floor(Math.min(aw.length,bw.length)*0.6));
+}
+// Returns the highlight objects that would be removed (shorter fragments of each overlapping cluster).
+function findDupFragments(){
+  const byKey={}; HL.forEach(h=>{(byKey[h.key]=byKey[h.key]||[]).push(h);});
+  const remove=[];
+  Object.values(byKey).forEach(list=>{
+    const clusters=[];
+    list.forEach(h=>{const c=clusters.find(cl=>cl.some(m=>hlSamePassage(m,h))); if(c)c.push(h); else clusters.push([h]);});
+    clusters.forEach(cl=>{ if(cl.length<2)return;
+      cl.sort((a,b)=>(b.text||"").length-(a.text||"").length);   // keep the longest/most complete
+      remove.push(...cl.slice(1));});
+  });
+  return remove;
+}
+let dedupeArmed=false, dedupePlan=null, dedupeTimer=null;
+function dedupeStatus(msg,show){const s=document.getElementById("hlDedupeStatus");if(!s)return;
+  s.textContent=msg||""; s.style.display=(show===false||!msg)?"none":"block";}
+function cleanupDuplicates(){
+  const btn=document.getElementById("hlDedupeBtn");
+  if(!dedupeArmed){
+    dedupePlan=findDupFragments();
+    if(!dedupePlan.length){dedupeStatus("Scanned — no overlapping highlights found.");toast("No overlapping highlights found");return;}
+    const books=new Set(dedupePlan.map(h=>h.key)).size;
+    dedupeArmed=true; btn.textContent=`Remove ${dedupePlan.length} duplicate${dedupePlan.length!==1?"s":""}?`;
+    dedupeStatus(`Found ${dedupePlan.length} overlapping highlight${dedupePlan.length!==1?"s":""} across ${books} book${books!==1?"s":""}. Click “Remove…” again to clean up — a backup is saved first.`);
+    clearTimeout(dedupeTimer); dedupeTimer=setTimeout(()=>{dedupeArmed=false;dedupePlan=null;btn.textContent="⚑ Clean up duplicates";dedupeStatus("",false);},10000);
+    return;
+  }
+  clearTimeout(dedupeTimer); dedupeArmed=false;
+  const remove=dedupePlan||[]; dedupePlan=null;
+  if(!remove.length){btn.textContent="⚑ Clean up duplicates";return;}
+  btn.disabled=true; btn.textContent="Cleaning up…"; dedupeStatus("Cleaning up… saving a backup and removing duplicates.");
+  setTimeout(()=>{                                     // yield so the "Cleaning up…" state paints first
+    archiveCurrent();                                  // back up the pre-cleanup library
+    const removeSet=new Set(remove);
+    HL=HL.filter(h=>!removeSet.has(h));
+    const keptSigs=new Set(HL.map(hlSig)); const supp=new Set(SUPPRESSED);
+    remove.forEach(h=>{const s=hlSig(h); if(!keptSigs.has(s)&&!supp.has(s)){SUPPRESSED.push(s);supp.add(s);}});  // don't suppress a sig still in use
+    HL_UPDATED=new Date().toISOString(); touchData(); persist();
+    btn.disabled=false; btn.textContent="⚑ Clean up duplicates";
+    renderHighlightsView();
+    dedupeStatus(`✓ Done — removed ${remove.length} overlapping highlight${remove.length!==1?"s":""}. A backup was saved to the archive.`);
+    toast(`Removed ${remove.length} overlapping highlight${remove.length!==1?"s":""}`);
+  },30);
+}
 // content signature for de-dup — MUST match import_kindle_highlights.py sig()
 function hlSig(h){return `${normTitle(h.title)}|${h.type}|${h.location||""}|${(h.text||"").slice(0,80).trim().toLowerCase()}`;}
 function parseAuthor(raw){raw=(raw||"").trim();const p=raw.split(",");
@@ -1090,15 +1226,17 @@ function parseClippings(text){
 }
 function mergeKindleHighlights(parsed){
   const titles={}; BOOKS.forEach(b=>{titles[normTitle(b.title)]=b.title;});
-  const sigs=new Set(HL.map(hlSig)); let added=0,matched=0;
+  const sigs=new Set(HL.map(hlSig)); const supp=new Set(SUPPRESSED); let added=0,matched=0;
   parsed.forEach(p=>{
     const key=normTitle(p.title);
     const h={id:genId(),key,title:titles[key]||p.title,author:p.author||"",
       type:p.type,text:p.text,page:p.page,location:p.location,added:p.added,source:"kindle"};
-    const s=hlSig(h); if(sigs.has(s))return;
+    const s=hlSig(h); if(sigs.has(s)||supp.has(s))return;   // skip existing and previously-removed duplicates
     if(titles[key])matched++;
     sigs.add(s); HL.push(h); added++;
   });
+  // re-apply ★ to any (re)imported highlight that matches an archived favorite
+  const favSigs=new Set(FAV.map(f=>f.sig)); HL.forEach(h=>{if(favSigs.has(hlSig(h)))h.fav=true;});
   if(added){HL_UPDATED=new Date().toISOString();touchData();persist();}
   return {added,matched,total:parsed.length};
 }
@@ -1180,15 +1318,23 @@ function render(){
   document.getElementById("dashboard").style.display=v==="dashboard"?"block":"none";
   document.getElementById("model").style.display=v==="model"?"block":"none";
   document.getElementById("highlights").style.display=v==="highlights"?"block":"none";
+  document.getElementById("vocab").style.display=v==="vocab"?"block":"none";
   document.querySelector("main > .toolbar").style.display=isList?"flex":"none";
   document.getElementById("tablewrap").style.display=isList?"block":"none";
   document.getElementById("stats").style.display=isList?"block":"none";
   if(v==="dashboard"){renderDashboard();return;}
   if(v==="model"){renderModel();return;}
   if(v==="highlights"){renderHighlightsView();return;}
+  if(v==="vocab"){renderVocab();return;}
   // count occurrences of each title across the whole library (for "Times read")
   TITLE_COUNTS={};
   BOOKS.forEach(b=>{const t=normTitle(b.title);if(t)TITLE_COUNTS[t]=(TITLE_COUNTS[t]||0)+1;});
+  // Perennial Shelf = a distinct view (unique titles, times read, last read) instead of the normal table
+  const shelfMode=(v==="library" && document.getElementById("fShelf").value==="perennial");
+  document.getElementById("perennialShelf").style.display=shelfMode?"block":"none";
+  document.getElementById("tablewrap").style.display=(isList&&!shelfMode)?"block":"none";
+  document.getElementById("stats").style.display=(isList&&!shelfMode)?"block":"none";
+  if(shelfMode){renderPerennialShelf();return;}
   // filters population
   const yrs=[...new Set(BOOKS.map(b=>b.year).filter(Boolean))].sort((a,b)=>b-a);
   fillSelect("fYear",yrs,"All years");
@@ -1321,7 +1467,7 @@ function renderHlList(book){
     (h.location?` · loc ${escapeHtml(h.location)}`:h.page?` · p ${escapeHtml(h.page)}`:"")+(h.type==="note"?" · note":"");
   document.getElementById("hlList").innerHTML=items.length?items.map(h=>`
     <div class="hl-item"><div class="hl-text">${escapeHtml(h.text)}</div>
-      <div class="hl-meta">${meta(h)}<button class="hl-del" data-id="${h.id}" title="Delete">×</button></div></div>`).join("")
+      <div class="hl-meta">${meta(h)}<button class="hl-fav ${h.fav?"on":""}" data-fav="${h.id}" title="Favorite">${h.fav?"★":"☆"}</button><button class="hl-del" data-id="${h.id}" title="Delete">×</button></div></div>`).join("")
     :`<div class="muted" style="font-size:12.5px">No highlights yet — Kindle ones arrive via the importer; add hardcopy ones with ＋ Add.</div>`;
 }
 // drag a panel by a handle (move freely within the window)
@@ -2127,9 +2273,139 @@ function renderModel(){
 }
 
 /* ============ HIGHLIGHTS TAB ============ */
+// Perennial Shelf: one row per unique perennial work (deduped by title+author), with times read & last read.
+function renderPerennialShelf(){
+  const host=document.getElementById("perennialShelf");
+  const groups={};
+  BOOKS.filter(b=>b.perennial).forEach(b=>{const k=bookKey(b);(groups[k]=groups[k]||[]).push(b);});
+  const rows=Object.values(groups).map(readings=>{
+    const b0=readings[0];
+    const finishedDates=readings.map(r=>r.dateFinished).filter(Boolean).sort();
+    return {b:b0, title:b0.title||"Untitled",
+      author:[b0.authorFirst,b0.authorLast].filter(Boolean).join(" "),
+      times:timesRead(b0), last:finishedDates.slice(-1)[0]||""};
+  }).sort((a,b)=> b.times-a.times || (a.last<b.last?1:a.last>b.last?-1:0) || a.title.localeCompare(b.title));
+  document.getElementById("count").textContent=rows.length?`${rows.length} perennial${rows.length!==1?"s":""}`:"";
+  if(!rows.length){
+    host.innerHTML=`<div class="empty">No perennials yet. Open a book and check <b>★ Perennial</b> to add it to your shelf.</div>`;
+    return;
+  }
+  const totalReads=rows.reduce((s,r)=>s+r.times,0);
+  const top=rows[0];
+  const summary=`<div class="shelf-summary"><b>${rows.length}</b> perennial title${rows.length!==1?"s":""} · `+
+    `<b>${totalReads}</b> total reading${totalReads!==1?"s":""}`+
+    (top&&top.times>1?` · most re-read: <b>${escapeHtml(top.title)}</b> (${top.times}×)`:"")+`</div>`;
+  const body=rows.map(r=>`<tr data-id="${r.b.id}">
+      <td class="title">${escapeHtml(r.title)}</td>
+      <td>${escapeHtml(r.author)}</td>
+      <td class="num">${r.times>1?`<strong>${r.times}</strong>`:1}</td>
+      <td>${r.last?escapeHtml(r.last):'<span class="muted">—</span>'}</td></tr>`).join("");
+  host.innerHTML=summary+`<div class="tablewrap"><table>
+      <thead><tr><th>Title</th><th>Author</th><th class="num">Times read</th><th>Last read</th></tr></thead>
+      <tbody id="shelfRows">${body}</tbody></table></div>`;
+  host.querySelectorAll("#shelfRows tr").forEach(tr=>{
+    tr.classList.add("perennial-row");
+    tr.onclick=()=>{const bk=BOOKS.find(b=>String(b.id)===tr.dataset.id);if(bk)openModal(bk);};});
+}
+/* ============ VOCABULARY ============ */
+// A highlight of a single word (optionally with punctuation) is treated as a vocab lookup.
+function isVocabText(t){t=(t||"").trim();return !!t && !/\s/.test(t) && /[A-Za-z]/.test(t);}
+function vocabWord(t){return (t||"").trim().replace(/^[^A-Za-z'’-]+|[^A-Za-z'’-]+$/g,"");}
+// One entry per (book, word); dedupes repeats of the same word within a title.
+function vocabItems(){
+  const seen=new Set(), out=[];
+  HL.forEach(h=>{ if(!isVocabText(h.text))return; const w=vocabWord(h.text); if(w.length<2)return;
+    const key=h.key||normTitle(h.title); const id=key+"|"+w.toLowerCase();
+    if(seen.has(id))return; seen.add(id);
+    out.push({key,title:h.title||key,word:w,added:h.added||null}); });
+  return out;
+}
+// Fetch a definition from the free Dictionary API; cache in DEFS (persisted). Returns after resolving.
+async function fetchDefinition(word){
+  const k=word.toLowerCase();
+  if(DEFS[k])return DEFS[k];
+  if(typeof fetch!=="function")return null;
+  try{
+    const r=await fetch("https://api.dictionaryapi.dev/api/v2/entries/en/"+encodeURIComponent(k));
+    if(!r.ok){DEFS[k]={ok:false};return DEFS[k];}
+    const j=await r.json(); const e=Array.isArray(j)?j[0]:null;
+    const m=e&&e.meanings&&e.meanings[0]; const d=m&&m.definitions&&m.definitions[0];
+    DEFS[k]=d?{ok:true,def:d.definition,pos:m.partOfSpeech||""}:{ok:false};
+  }catch(e){DEFS[k]={ok:false};}
+  return DEFS[k];
+}
+// Fetch all missing definitions with light concurrency, then persist + re-render.
+let vocabFetching=false;
+async function fetchMissingDefs(words){
+  const need=[...new Set(words.map(w=>w.toLowerCase()))].filter(w=>!DEFS[w]);
+  if(!need.length || vocabFetching)return;
+  vocabFetching=true;
+  const q=need.slice();
+  const worker=async()=>{ while(q.length){const w=q.shift(); await fetchDefinition(w);} };
+  await Promise.all([worker(),worker(),worker()]);   // 3 at a time
+  vocabFetching=false;
+  persist(); if(currentView==="vocab")renderVocab();
+}
+function defText(word){
+  const e=DEFS[word.toLowerCase()];
+  if(!e)return `<span class="muted">Looking up…</span>`;
+  if(!e.ok)return `<span class="muted">No definition found</span>`;
+  return `${e.pos?`<i class="vpos">${escapeHtml(e.pos)}</i> `:""}${escapeHtml(e.def)}`;
+}
+function renderVocabNav(byKey){
+  const nav=document.getElementById("vocabNav"); if(!nav)return;
+  const total=Object.values(byKey).reduce((s,a)=>s+a.length,0);
+  if(VOCAB_SELECTED && !byKey[VOCAB_SELECTED])VOCAB_SELECTED=null;
+  const titles=Object.keys(byKey).map(k=>({key:k,title:byKey[k][0].title||k,n:byKey[k].length}))
+    .sort((a,b)=>a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+  const item=(key,label,count,sel)=>`<div class="navitem ${sel?"sel":""}" data-key="${key==null?"":encodeURIComponent(key)}">`+
+    `<span class="t">${escapeHtml(label)}</span><span class="c">${count}</span></div>`;
+  nav.innerHTML=item(null,"All words",total,!VOCAB_SELECTED)+titles.map(t=>item(t.key,t.title,t.n,VOCAB_SELECTED===t.key)).join("");
+}
+function renderVocab(){
+  const q=document.getElementById("vocabSearch").value.trim().toLowerCase();
+  const all=vocabItems();
+  const navGroups={}; all.forEach(it=>{(navGroups[it.key]=navGroups[it.key]||[]).push(it);});
+  renderVocabNav(navGroups);
+  let items=all;
+  if(VOCAB_SELECTED)items=items.filter(it=>it.key===VOCAB_SELECTED);
+  if(q)items=items.filter(it=>it.word.toLowerCase().includes(q)||(it.title||"").toLowerCase().includes(q));
+  const groups={}; items.forEach(it=>{(groups[it.key]=groups[it.key]||[]).push(it);});
+  const keys=Object.keys(groups).sort((a,b)=>(groups[a][0].title||a).toLowerCase().localeCompare((groups[b][0].title||b).toLowerCase()));
+  document.getElementById("vocabCount").textContent=
+    `${items.length} word${items.length!==1?"s":""} · ${keys.length} book${keys.length!==1?"s":""}`;
+  document.getElementById("vocabGroups").innerHTML=keys.length?keys.map(k=>{
+    const arr=groups[k].slice().sort((a,b)=>a.word.toLowerCase().localeCompare(b.word.toLowerCase()));
+    return `<div class="card" style="margin-bottom:12px">
+      <h3 style="text-transform:none;color:var(--ink)">${escapeHtml(arr[0].title||k)}<span class="cardsub">${arr.length} word${arr.length!==1?"s":""}</span></h3>
+      <div class="vocab-list">${arr.map(it=>`<div class="vocab-item"><span class="vword">${escapeHtml(it.word)}</span><span class="vdef">${defText(it.word)}</span></div>`).join("")}</div></div>`;
+  }).join(""):(all.length?`<div class="empty">No words match.</div>`
+    :`<div class="empty">No vocabulary yet. Single-word Kindle highlights show up here automatically.</div>`);
+  // auto-fetch any missing definitions for what's shown
+  fetchMissingDefs(items.map(it=>it.word));
+}
+// Left nav: every title with highlights (respects the ★ filter); click to focus one title.
+function renderHlNav(){
+  const nav=document.getElementById("hlNav"); if(!nav)return;
+  const favOnly=document.getElementById("hlFavOnly").checked;
+  const base=favOnly?HL.filter(h=>h.fav):HL;
+  const g={}; base.forEach(h=>{(g[h.key]=g[h.key]||[]).push(h);});
+  if(HL_SELECTED && !g[HL_SELECTED])HL_SELECTED=null;        // selected title dropped out of the filter
+  const total=base.length;
+  const titles=Object.keys(g).map(k=>({key:k,title:(g[k][0].title||k),n:g[k].length}))
+    .sort((a,b)=>a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+  const item=(key,label,count,sel)=>`<div class="navitem ${sel?"sel":""}" data-key="${key==null?"":encodeURIComponent(key)}">`+
+    `<span class="t">${escapeHtml(label)}</span><span class="c">${count}</span></div>`;
+  nav.innerHTML=item(null,"All highlights",total,!HL_SELECTED)+
+    titles.map(t=>item(t.key,t.title,t.n,HL_SELECTED===t.key)).join("");
+}
 function renderHighlightsView(){
   const q=document.getElementById("hlSearch").value.trim().toLowerCase();
-  let items=q?HL.filter(h=>(h.text||"").toLowerCase().includes(q)||(h.title||"").toLowerCase().includes(q)):HL.slice();
+  const favOnly=document.getElementById("hlFavOnly").checked;
+  renderHlNav();
+  let items=favOnly?HL.filter(h=>h.fav):HL.slice();
+  if(HL_SELECTED)items=items.filter(h=>h.key===HL_SELECTED);       // focus one title
+  if(q)items=items.filter(h=>(h.text||"").toLowerCase().includes(q)||(h.title||"").toLowerCase().includes(q));
   const groups={};items.forEach(h=>{(groups[h.key]=groups[h.key]||[]).push(h);});
   const keys=Object.keys(groups).sort((a,b)=>groups[b].length-groups[a].length);
   document.getElementById("hlViewCount").textContent=
@@ -2146,8 +2422,9 @@ function renderHighlightsView(){
       <h3 style="text-transform:none;color:var(--ink)">${escapeHtml(g0.title||k)}
         <span class="cardsub">${escapeHtml(g0.author||"")}${g0.author?" · ":""}${arr.length}</span></h3>
       <div class="hl-list" style="max-height:none">${arr.map(h=>`<div class="hl-item">
-        <div class="hl-text">${escapeHtml(h.text)}</div><div class="hl-meta">${meta(h)}</div></div>`).join("")}</div></div>`;
-  }).join(""):`<div class="empty">No highlights yet. Plug in your Kindle and run <b>Import Kindle Highlights</b>, or add hardcopy ones from a book's editor.</div>`;
+        <div class="hl-text">${escapeHtml(h.text)}</div><div class="hl-meta">${meta(h)}<button class="hl-fav ${h.fav?"on":""}" data-fav="${h.id}" title="Favorite">${h.fav?"★":"☆"}</button></div></div>`).join("")}</div></div>`;
+  }).join(""):(HL.length?`<div class="empty">No highlights match.</div>`
+    :`<div class="empty">No highlights yet. Plug in your Kindle and run <b>Import Kindle Highlights</b>, or add hardcopy ones from a book's editor.</div>`);
 }
 
 /* ============ TOAST ============ */
@@ -2183,6 +2460,8 @@ document.getElementById("hlSaveBtn").onclick=()=>{
   document.getElementById("hlText").value="";document.getElementById("hlPaste").style.display="none";
   renderHlList(editing);render();toast(`Added ${parsed.length} highlight${parsed.length!==1?"s":""}`);};
 document.getElementById("hlList").addEventListener("click",e=>{
+  const fav=e.target.closest(".hl-fav");
+  if(fav){toggleFav(fav.dataset.fav);renderHlList(editing);return;}
   const btn=e.target.closest(".hl-del");if(!btn||!editing)return;
   deleteHighlight(btn.dataset.id);renderHlList(editing);render();});
 // highlights window + draggable/resizable panels
@@ -2251,7 +2530,7 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   currentView=t.dataset.view;render();});
 // ---- drag-to-reorder tabs (saved globally in localStorage; applies to every library, persists across sessions) ----
 const TABS_ORDER_KEY="readingListTabOrder";
-const DEFAULT_TAB_ORDER=["library","reading","dashboard","model","highlights"];
+const DEFAULT_TAB_ORDER=["library","reading","dashboard","model","highlights","vocab"];
 function getTabOrder(){
   try{const s=JSON.parse(localStorage.getItem(TABS_ORDER_KEY));
     if(Array.isArray(s)){const known=new Set(DEFAULT_TAB_ORDER);
@@ -2305,11 +2584,57 @@ function initTabDrag(){
   });
 }
 applyTabOrder(); initTabDrag();
+// ---- swipe left/right to switch tabs (touch devices) ----
+function switchTabByOffset(dir){
+  if(document.querySelector(".overlay.open"))return;        // don't switch while a modal is open
+  const tabs=[...document.querySelectorAll(".tabs .tab")];
+  let i=tabs.findIndex(t=>t.dataset.view===currentView); if(i<0)return;
+  const j=Math.min(tabs.length-1,Math.max(0,i+dir)); if(j===i)return;
+  tabs.forEach(x=>x.classList.remove("active")); tabs[j].classList.add("active");
+  currentView=tabs[j].dataset.view; render();
+  try{tabs[j].scrollIntoView({inline:"nearest",block:"nearest"});}catch(_){}
+}
+(function initSwipeTabs(){
+  const inHScroll=el=>{ for(let n=el;n&&n!==document.body;n=n.parentElement){
+    if(n.scrollWidth-n.clientWidth>4){const ov=getComputedStyle(n).overflowX; if(ov==="auto"||ov==="scroll")return true;} } return false; };
+  let sx=0,sy=0,st=0,skip=false;
+  document.addEventListener("touchstart",e=>{
+    if(e.touches.length!==1){skip=true;return;}
+    const t=e.target;
+    skip=!!(t.closest&&t.closest("input,textarea,select,button,a,.tabs,.floatwin,.modal,canvas"))||inHScroll(t);
+    const p=e.touches[0]; sx=p.clientX; sy=p.clientY; st=Date.now();
+  },{passive:true});
+  document.addEventListener("touchend",e=>{
+    if(skip)return; const p=e.changedTouches[0]; if(!p)return;
+    const dx=p.clientX-sx, dy=p.clientY-sy;
+    if(Date.now()-st<800 && Math.abs(dx)>=60 && Math.abs(dx)>Math.abs(dy)*1.8)
+      switchTabByOffset(dx<0?1:-1);   // swipe left → next tab, swipe right → previous
+  },{passive:true});
+})();
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){closeModal();closeSettings();document.getElementById("exportOverlay").classList.remove("open");}});
 document.getElementById("themeSel").addEventListener("change",e=>applyTheme(e.target.value));
 document.getElementById("dashScope").addEventListener("change",renderDashboard);
 document.getElementById("modelColor").addEventListener("change",renderModel);
 document.getElementById("hlSearch").addEventListener("input",renderHighlightsView);
+document.getElementById("hlFavOnly").addEventListener("change",renderHighlightsView);
+document.getElementById("hlDedupeBtn").onclick=cleanupDuplicates;
+document.getElementById("vocabSearch").addEventListener("input",renderVocab);
+document.getElementById("vocabNav").addEventListener("click",e=>{
+  const it=e.target.closest(".navitem"); if(!it)return;
+  VOCAB_SELECTED=it.dataset.key?decodeURIComponent(it.dataset.key):null;
+  renderVocab();});
+document.getElementById("vocabLookupBtn").onclick=()=>{
+  const missing=vocabItems().map(it=>it.word).filter(w=>!DEFS[w.toLowerCase()]);
+  if(!missing.length){toast("All words already have definitions");return;}
+  toast(`Looking up ${new Set(missing.map(w=>w.toLowerCase())).size} word${missing.length!==1?"s":""}…`);
+  fetchMissingDefs(missing);};
+document.getElementById("hlNav").addEventListener("click",e=>{
+  const it=e.target.closest(".navitem"); if(!it)return;
+  HL_SELECTED=it.dataset.key?decodeURIComponent(it.dataset.key):null;
+  renderHighlightsView();});
+document.getElementById("hlGroups").addEventListener("click",e=>{
+  const fav=e.target.closest(".hl-fav"); if(!fav)return;
+  toggleFav(fav.dataset.fav); renderHighlightsView();});
 document.getElementById("exportConfirm").onclick=confirmExport;
 document.getElementById("exportCancel").onclick=()=>document.getElementById("exportOverlay").classList.remove("open");
 document.getElementById("exportClose").onclick=()=>document.getElementById("exportOverlay").classList.remove("open");
